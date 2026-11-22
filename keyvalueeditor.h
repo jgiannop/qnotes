@@ -31,7 +31,7 @@ signals:
 
 private:
     friend class KeyValueRow;
-    KeyValueRow *appendRow(const QString &key, const QString &value, bool secret);
+    KeyValueRow *appendRow(const QString &key, const QString &value, bool secret, const QString &id = QString());
     void removeRow(KeyValueRow *row);
     void clearRows();
 

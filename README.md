@@ -17,8 +17,10 @@ A sticky-notes desktop app for Linux, modelled on Windows Sticky Notes. Built wi
   brings up the notes list.
 - 7 note colours, frameless windows you can move and resize, and autosave.
 
-> **Note:** secrets are only hidden in the UI. They are stored **in plaintext** in `notes.json`. The plan is to move
-> them to the GNOME Keyring (libsecret).
+- Secret values are stored in the **system keychain**: GNOME Keyring or KWallet on Linux, Credential Manager on
+  Windows. `notes.json` only keeps a reference to them. Secrets from older versions are moved there automatically.
+  Without a keychain (e.g. a bare window manager without one), they are saved in `notes.json` unencrypted, and
+  QNotes tells you so once.
 
 ## Install
 
@@ -34,13 +36,14 @@ Download the latest package from the [Releases](https://github.com/jgiannop/qnot
 ### Requirements
 
 - Qt 6 (tested with 6.4)
+- QtKeychain for Qt 6 (`qtkeychain-qt6-dev`). If it isn't installed, CMake downloads and builds it.
 - CMake ≥ 3.16 and a C++17 compiler
 - `libpam0g-dev` (optional). Without it, secret values can't be revealed.
 
 On Ubuntu/Debian:
 
 ```bash
-sudo apt install build-essential cmake qt6-base-dev libpam0g-dev
+sudo apt install build-essential cmake qt6-base-dev qtkeychain-qt6-dev libpam0g-dev libxcb1-dev
 ```
 
 ### Build & run

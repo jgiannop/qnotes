@@ -10,7 +10,9 @@ cmake -S . -B build && cmake --build build -j
 ./build/qnotes
 ```
 
-- Requires Qt 6 (6.4 on this machine) and `libpam0g-dev` (for `HAVE_PAM`; without it secrets can't be revealed).
+- Requires Qt 6 (6.4 on this machine), `qtkeychain-qt6-dev` (else CMake FetchContent builds QtKeychain 0.15 statically
+  — that's what Windows CI does; on Linux that path would need `libsecret-1-dev`), `libpam0g-dev` (for `HAVE_PAM`;
+  without it secrets can't be revealed) and `libxcb1-dev`.
 - `build/` caches absolute paths: delete it if the project folder is moved/renamed.
 - Restarting the app to test: stop the running instance first. Notes autosave 500 ms after each change, so killing it loses nothing.
 
@@ -22,6 +24,8 @@ cmake -S . -B build && cmake --build build -j
   `qnotes-<user>`). A second launch sends `show` to the running one and exits; a stale socket is removed.
 - `notewindow.*` — one frameless note window: title bar (+ / ⋯ / ✕), colour menu, per-kind content + bottom toolbar.
 - `keyvalueeditor.*` — KeyValue note content: rows of key | value | 👁 ⧉ 🔒 ✕ (`KeyValueRow` is defined in the .cpp).
+  Every row has a stable `id` (UUID, saved in the JSON); a secret's keychain entry is stored under it.
+- `secretstore.*` — synchronous wrapper around QtKeychain (service `QNotes`, key = field id).
 - `systemauth.*` — password dialog; verifies the user's system password via PAM service `sudo` (Linux) or `LogonUserW` (Windows).
 - `noteslistwindow.*` — "QNotes" list window: pill search + round ✚/🔑 buttons, painted note cards (`NoteCardDelegate`:
   shadow, left colour accent, first line = bold title). Fixed light palette via one style sheet using `#objectName`
@@ -45,7 +49,8 @@ cmake -S . -B build && cmake --build build -j
 ## Data
 
 - Saved to `~/.local/share/qnotes/notes.json` (`QStandardPaths::AppDataLocation`), written atomically with `QSaveFile`.
-- Each note: `id, type ("text"|"keyvalue"), color, x, y, w, h, open, modified` plus `html` (text) or `fields: [{key, value, secret}]`.
+- Each note: `id, type ("text"|"keyvalue"), color, x, y, w, h, open, modified` plus `html` (text) or
+  `fields: [{id, key, value, secret}]`. Secret fields have no `value` when it's in the keychain.
 - Legacy `"type": "table"` notes (a removed spreadsheet feature) are converted to text notes on load (`legacyTableToHtml` in notemanager.cpp).
 
 ## Design decisions / gotchas
@@ -61,8 +66,13 @@ cmake -S . -B build && cmake --build build -j
   which gets real clicks. Cost: no session bus in-process (no AT-SPI accessibility). Check with
   `gdbus ... StatusNotifierWatcher RegisteredStatusNotifierItems`: qnotes must not be listed. Needs `libxcb1-dev`.
 
-- **Secrets are only hidden in the UI.** Values are stored in plaintext in notes.json. Moving secrets to the GNOME Keyring
-  (libsecret, needs `libsecret-1-dev`) is the planned fix. Don't claim secrets are encrypted.
+- **Secrets live in the system keychain** (NoteManager `loadSecrets`/`storeSecrets`): on save, changed secret values
+  are written to the keychain and stripped from the JSON; entries no longer referenced are deleted after the JSON was
+  written. Plaintext secrets (older versions) are migrated on start. Ids that couldn't be read go to
+  `m_unreadableSecrets` and are never overwritten with an empty value. Without a keychain (`QKeychain::isAvailable()`),
+  or if a write fails, the value stays in the JSON in plaintext and the user is warned once (QSettings flag).
+  The tray DBus hack is GNOME-only: QtKeychain's KWallet backend uses QtDBus; on GNOME libsecret uses its own (GDBus)
+  connection made after the env var is restored (verified).
 - Secret behaviour: shown as dots, read-only and not copyable while locked. Reveal / copy / un-mark requires system auth.
   Grace period 60 s after successful auth (sudo-like), 3 attempts max, revealed values auto-hide after 30 s and when the
   note is hidden, copied secrets are cleared from the clipboard after 30 s. Notes list/search mask secret values.

@@ -1,5 +1,6 @@
 #include "notemanager.h"
 #include "noteslistwindow.h"
+#include "secretstore.h"
 #include "notewindow.h"
 
 #include <QApplication>
@@ -13,6 +14,8 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSaveFile>
+#include <QScopeGuard>
+#include <QSettings>
 #include <QScreen>
 #include <QStandardPaths>
 #include <QSystemTrayIcon>
@@ -82,9 +85,91 @@ NoteWindow *NoteManager::addNote(const QString &id, NoteWindow::Kind kind)
     return note;
 }
 
+// Fills in secret values from the keychain. Secrets still stored in plaintext (older versions, or no
+// keychain at the time) are kept and *migrate is set, so the next save moves them into the keychain.
+QJsonArray NoteManager::loadSecrets(QJsonArray fields, bool *migrate)
+{
+    for (int i = 0; i < fields.size(); ++i) {
+        QJsonObject o = fields.at(i).toObject();
+        if (!o.value("secret").toBool())
+            continue;
+        const QString id = o.value("id").toString();
+        if (o.contains("value")) {
+            if (!o.value("value").toString().isEmpty() && SecretStore::isAvailable())
+                *migrate = true;
+            continue;
+        }
+        QString value, error;
+        if (SecretStore::isAvailable() && SecretStore::read(id, &value, &error)) {
+            m_storedSecrets.insert(id, value);
+            o["value"] = value;
+            fields[i] = o;
+        } else {
+            qWarning("QNotes: could not read secret %s from the keychain: %s", qPrintable(id),
+                     SecretStore::isAvailable() ? qPrintable(error) : "no keychain available");
+            m_unreadableSecrets.insert(id);
+        }
+    }
+    return fields;
+}
+
+// Moves secret values into the keychain (writing only changed ones) and strips them from the JSON.
+// Without a keychain, or if writing fails, the value stays in the JSON (plaintext) as before.
+QJsonArray NoteManager::storeSecrets(QJsonArray fields, QSet<QString> *seen)
+{
+    for (int i = 0; i < fields.size(); ++i) {
+        QJsonObject o = fields.at(i).toObject();
+        if (!o.value("secret").toBool())
+            continue;
+        const QString id = o.value("id").toString();
+        const QString value = o.value("value").toString();
+        seen->insert(id);
+
+        if (m_unreadableSecrets.contains(id) && value.isEmpty()) {
+            o.remove("value"); // keep the keychain entry untouched; we never saw its value
+            fields[i] = o;
+            continue;
+        }
+        if (value.isEmpty() || !SecretStore::isAvailable()) {
+            if (!value.isEmpty())
+                warnPlaintextSecrets();
+            continue; // nothing secret to protect / no keychain: keep it in the JSON
+        }
+        const auto stored = m_storedSecrets.constFind(id);
+        if (stored == m_storedSecrets.cend() || *stored != value) {
+            QString error;
+            if (!SecretStore::write(id, value, &error)) {
+                qWarning("QNotes: could not write secret to the keychain: %s", qPrintable(error));
+                warnPlaintextSecrets();
+                continue;
+            }
+            m_storedSecrets.insert(id, value);
+            m_unreadableSecrets.remove(id);
+        }
+        o.remove("value");
+        fields[i] = o;
+    }
+    return fields;
+}
+
+void NoteManager::warnPlaintextSecrets()
+{
+    if (m_warnedPlaintext)
+        return;
+    m_warnedPlaintext = true;
+    QSettings settings("qnotes", "qnotes");
+    if (settings.value("warnedPlaintextSecrets").toBool())
+        return; // tell the user once, not on every start
+    settings.setValue("warnedPlaintextSecrets", true);
+    QMessageBox::warning(nullptr, tr("QNotes"),
+                         tr("No system keychain was found (such as GNOME Keyring or KWallet), so secret values "
+                            "are saved unencrypted in the notes file. They are still hidden in QNotes."));
+}
+
 void NoteManager::start()
 {
     QFile file(filePath());
+    bool migrate = false;
     if (file.open(QIODevice::ReadOnly)) {
         const QJsonArray arr = QJsonDocument::fromJson(file.readAll()).object().value("notes").toArray();
         for (const QJsonValue &v : arr) {
@@ -101,7 +186,7 @@ void NoteManager::start()
             if (type == "table")
                 n->setHtml(legacyTableToHtml(o.value("table").toObject()));
             else if (kind == NoteWindow::Kind::KeyValue)
-                n->setKeyValueData(o.value("fields").toArray());
+                n->setKeyValueData(loadSecrets(o.value("fields").toArray(), &migrate));
             else
                 n->setHtml(o.value("html").toString());
 
@@ -121,6 +206,8 @@ void NoteManager::start()
 
     if (m_notes.isEmpty())
         createNote();
+    if (migrate)
+        save(); // move plaintext secrets into the keychain right away
 
     setupTray();
     if (!m_tray)
@@ -227,15 +314,23 @@ void NoteManager::scheduleSave()
 
 void NoteManager::save()
 {
+    // Keychain calls run a local event loop: don't start a second save from inside it.
+    if (m_saving) {
+        scheduleSave();
+        return;
+    }
+    m_saving = true;
+    const auto done = qScopeGuard([this] { m_saving = false; });
     m_saveTimer.stop();
 
     QJsonArray arr;
+    QSet<QString> secretsInUse;
     for (NoteWindow *n : std::as_const(m_notes)) {
         QJsonObject o;
         o["id"] = n->id();
         if (n->kind() == NoteWindow::Kind::KeyValue) {
             o["type"] = "keyvalue";
-            o["fields"] = n->keyValueData();
+            o["fields"] = storeSecrets(n->keyValueData(), &secretsInUse);
         } else {
             o["type"] = "text";
             o["html"] = n->html();
@@ -251,12 +346,31 @@ void NoteManager::save()
     }
 
     const QString path = filePath();
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly)) {
-        qWarning("Could not save notes to %s", qPrintable(path));
+    const bool written = [&] {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QSaveFile file(path);
+        if (!file.open(QIODevice::WriteOnly)) {
+            qWarning("Could not save notes to %s", qPrintable(path));
+            return false;
+        }
+        file.write(QJsonDocument(QJsonObject{{"notes", arr}}).toJson());
+        return file.commit();
+    }();
+
+    // Delete keychain entries of secrets that are gone (field/note deleted or no longer secret), but only
+    // once the notes file no longer refers to them.
+    if (!written)
         return;
+    for (auto it = m_storedSecrets.begin(); it != m_storedSecrets.end();) {
+        if (secretsInUse.contains(it.key())) {
+            ++it;
+            continue;
+        }
+        SecretStore::remove(it.key());
+        it = m_storedSecrets.erase(it);
     }
-    file.write(QJsonDocument(QJsonObject{{"notes", arr}}).toJson());
-    file.commit();
+    for (const QString &id : std::as_const(m_unreadableSecrets))
+        if (!secretsInUse.contains(id))
+            SecretStore::remove(id);
+    m_unreadableSecrets.intersect(secretsInUse);
 }

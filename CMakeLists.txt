@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QNotes VERSION 1.1.1 LANGUAGES CXX
+project(QNotes VERSION 1.2.0 LANGUAGES CXX
         DESCRIPTION "Sticky notes with text and key-value notes"
         HOMEPAGE_URL "https://github.com/jgiannop/qnotes")
 
@@ -18,6 +18,7 @@ qt_add_executable(qnotes
     keyvalueeditor.h keyvalueeditor.cpp
     systemauth.h systemauth.cpp
     singleinstance.h singleinstance.cpp
+    secretstore.h secretstore.cpp
 )
 
 qt_add_resources(qnotes "icons"
@@ -33,6 +34,28 @@ qt_add_resources(qnotes "icons"
 
 target_compile_definitions(qnotes PRIVATE QNOTES_VERSION="${PROJECT_VERSION}")
 target_link_libraries(qnotes PRIVATE Qt6::Widgets Qt6::Network)
+
+# Secret values go to the system keychain via QtKeychain. Linux: distro package (qtkeychain-qt6-dev);
+# if it isn't installed (e.g. on Windows) it's built from source as a static library.
+find_package(Qt6Keychain QUIET)
+if(Qt6Keychain_FOUND AND NOT QNOTES_BUNDLE_QTKEYCHAIN)
+    target_link_libraries(qnotes PRIVATE ${QTKEYCHAIN_LIBRARIES})
+    target_include_directories(qnotes PRIVATE ${QTKEYCHAIN_INCLUDE_DIRS})
+else()
+    include(FetchContent)
+    set(BUILD_WITH_QT6 ON CACHE BOOL "" FORCE)
+    set(BUILD_TEST_APPLICATION OFF CACHE BOOL "" FORCE)
+    set(BUILD_TRANSLATIONS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(qtkeychain
+        GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
+        GIT_TAG 0.15.0
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(qtkeychain)
+    target_link_libraries(qnotes PRIVATE qt6keychain)
+    # Static library: its headers must not declare the API as dllimport on Windows.
+    target_compile_definitions(qnotes PRIVATE QTKEYCHAIN_NO_EXPORT)
+endif()
 
 # System password check for secret values (Linux: PAM, needs libpam0g-dev)
 if(UNIX AND NOT APPLE)

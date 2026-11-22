@@ -5,6 +5,7 @@
 #include <QClipboard>
 #include <QHBoxLayout>
 #include <QJsonObject>
+#include <QUuid>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPointer>
@@ -23,8 +24,9 @@ const QString kMask = QStringLiteral("••••••••");
 class KeyValueRow : public QWidget
 {
 public:
-    KeyValueRow(KeyValueEditor *editor, const QString &key, const QString &value, bool secret)
-        : QWidget(editor->m_container), m_editor(editor), m_secret(secret)
+    KeyValueRow(KeyValueEditor *editor, const QString &id, const QString &key, const QString &value, bool secret)
+        : QWidget(editor->m_container), m_editor(editor),
+          m_id(id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id), m_secret(secret)
     {
         m_key = new QLineEdit(key, this);
         m_key->setPlaceholderText(QObject::tr("Key"));
@@ -70,6 +72,7 @@ public:
         applyState();
     }
 
+    QString id() const { return m_id; } // stable; the keychain entry of a secret value is stored under it
     QString key() const { return m_key->text(); }
     QString value() const { return m_value->text(); }
     bool isSecret() const { return m_secret; }
@@ -194,6 +197,7 @@ private:
     }
 
     KeyValueEditor *m_editor;
+    QString m_id;
     QLineEdit *m_key;
     QLineEdit *m_value;
     QToolButton *m_eye;
@@ -222,9 +226,9 @@ KeyValueEditor::KeyValueEditor(QWidget *parent) : QScrollArea(parent)
     appendRow(QString(), QString(), false);
 }
 
-KeyValueRow *KeyValueEditor::appendRow(const QString &key, const QString &value, bool secret)
+KeyValueRow *KeyValueEditor::appendRow(const QString &key, const QString &value, bool secret, const QString &id)
 {
-    auto *row = new KeyValueRow(this, key, value, secret);
+    auto *row = new KeyValueRow(this, id, key, value, secret);
     m_layout->insertWidget(m_layout->count() - 1, row); // before the stretch
     m_rows.append(row);
     return row;
@@ -272,7 +276,8 @@ QJsonArray KeyValueEditor::toJson() const
     for (const KeyValueRow *row : m_rows) {
         if (row->key().isEmpty() && row->value().isEmpty())
             continue;
-        arr.append(QJsonObject{{"key", row->key()}, {"value", row->value()}, {"secret", row->isSecret()}});
+        arr.append(QJsonObject{{"id", row->id()}, {"key", row->key()}, {"value", row->value()},
+                               {"secret", row->isSecret()}});
     }
     return arr;
 }
@@ -282,7 +287,8 @@ void KeyValueEditor::fromJson(const QJsonArray &fields)
     clearRows();
     for (const QJsonValue &v : fields) {
         const QJsonObject o = v.toObject();
-        appendRow(o.value("key").toString(), o.value("value").toString(), o.value("secret").toBool());
+        appendRow(o.value("key").toString(), o.value("value").toString(), o.value("secret").toBool(),
+                  o.value("id").toString());
     }
     if (m_rows.isEmpty())
         appendRow(QString(), QString(), false);

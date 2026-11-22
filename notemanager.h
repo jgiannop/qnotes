@@ -1,7 +1,10 @@
 #pragma once
 
+#include <QHash>
+#include <QJsonArray>
 #include <QList>
 #include <QObject>
+#include <QSet>
 #include <QTimer>
 
 #include "notewindow.h"
@@ -40,10 +43,17 @@ private:
     NoteWindow *addNote(const QString &id, NoteWindow::Kind kind);
     QString filePath() const;
     void setupTray();
+    QJsonArray loadSecrets(QJsonArray fields, bool *migrate);
+    QJsonArray storeSecrets(QJsonArray fields, QSet<QString> *seen);
+    void warnPlaintextSecrets();
     NotesListWindow *listWindow();
 
     QList<NoteWindow *> m_notes;
     NotesListWindow *m_list = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
+    QHash<QString, QString> m_storedSecrets; // field id -> value currently in the keychain
+    QSet<QString> m_unreadableSecrets;       // in the keychain but couldn't be read: never overwrite
+    bool m_warnedPlaintext = false;
+    bool m_saving = false;
     QTimer m_saveTimer;
 };

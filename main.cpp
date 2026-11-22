@@ -55,8 +55,9 @@ int main(int argc, char *argv[])
     // X11 tray available, hide the session bus from Qt until the tray icon exists.
     // Side effect: Qt caches the failed connection, so this process has no session bus. QNotes doesn't use
     // DBus itself; only accessibility (screen readers) is lost.
+    // GNOME only: KDE's tray handles single clicks fine, and KWallet (the keychain) needs Qt's DBus there.
     const QByteArray sessionBus = qgetenv("DBUS_SESSION_BUS_ADDRESS");
-    const bool forceXEmbedTray = xembedTrayAvailable();
+    const bool forceXEmbedTray = qgetenv("XDG_CURRENT_DESKTOP").contains("GNOME") && xembedTrayAvailable();
     if (forceXEmbedTray)
         qputenv("DBUS_SESSION_BUS_ADDRESS", "disabled:");
 
