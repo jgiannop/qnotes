@@ -26,13 +26,25 @@ cmake -S . -B build && cmake --build build -j
 - `keyvalueeditor.*` — KeyValue note content: rows of key | value | 👁 ⧉ 🔒 ✕ (`KeyValueRow` is defined in the .cpp).
   Every row has a stable `id` (UUID, saved in the JSON); a secret's keychain entry is stored under it.
 - `secretstore.*` — synchronous wrapper around QtKeychain (service `QNotes`, key = field id).
+- `preferencesdialog.*` — start on login, theme (System/Light/Dark), Export…/Import… (calls NoteManager).
+- `autostart.*` — `~/.config/autostart/qnotes.desktop` (Exec=`qnotes` if that's us on PATH, else the full path) /
+  Windows `HKCU\...\Run` value `QNotes`.
+- `theme.*` — light/dark preference (`appearance/theme`); system detection: Qt ≥ 6.5 `colorScheme()`, else
+  `gsettings get org.gnome.desktop.interface color-scheme` (DBus portal isn't usable, see tray hack), Windows
+  registry `AppsUseLightTheme`, else palette lightness. `NotesListWindow::applyTheme()` rebuilds its style sheet;
+  it's re-checked on every `showNear()`.
+- `backup.*` + `third_party/tweetnacl/` — encrypted backup files: PBKDF2-HMAC-SHA256 (`QPasswordDigestor`, 600k
+  iterations, ~2 s → run on a worker thread) + TweetNaCl `crypto_secretbox`. `randombytes()` is implemented in
+  backup.cpp with `QRandomGenerator::system()`. Export payload = `{"notes": [noteToJson...]}` incl. secret values.
+  Import adds notes whose id doesn't exist yet (closed), then `save()` moves their secrets into the keychain.
 - `systemauth.*` — password dialog; verifies the user's system password via PAM service `sudo` (Linux) or `LogonUserW` (Windows).
 - `noteslistwindow.*` — "QNotes" list window: pill search + round ✚/🔑 buttons, painted note cards (`NoteCardDelegate`:
   shadow, left colour accent, first line = bold title). Fixed light palette via one style sheet using `#objectName`
   selectors (so the context menu / message boxes don't inherit it); the scrollbar has its own style sheet.
   List or grid view (toggle button, saved in `QSettings("qnotes","qnotes")` key `list/grid`): same `QListWidget`,
   grid = `LeftToRight` flow + wrapping; `updateCardSize()` sets the delegate's `cardSize` from the viewport width.
-  A normal window; `showNear()` places it next to the tray icon the first time only.
+  A normal window; geometry saved in QSettings `list/geometry` on hide/destroy and restored in `showNear()`
+  (first ever show: next to the tray icon).
 - `notecolors.h` — the 7 Windows Sticky Notes colours (title/body/text).
 - `icons/` — `qnotes.svg` is the master icon; the PNGs (embedded via `qt_add_resources` and installed to hicolor) and
   `qnotes.ico` (Windows exe) are rendered from it. ImageMagick renders this SVG wrongly; use Qt's `QSvgRenderer`.
@@ -55,6 +67,7 @@ cmake -S . -B build && cmake --build build -j
 
 ## Design decisions / gotchas
 
+- Settings (not notes) live in `QSettings("qnotes", "qnotes")` → `~/.config/qnotes/qnotes.conf`.
 - **Tray:** if `QSystemTrayIcon::isSystemTrayAvailable()`, the list isn't shown at start; left-click on the tray
   shows the list window (first time next to the icon, or at the mouse if the icon position is unknown) or hides it
   if it's the active window; right-click has a menu with Quit. `quitOnLastWindowClosed` is off then, so closing the

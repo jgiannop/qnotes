@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QNotes VERSION 1.2.0 LANGUAGES CXX
+project(QNotes VERSION 1.3.0 LANGUAGES C CXX
         DESCRIPTION "Sticky notes with text and key-value notes"
         HOMEPAGE_URL "https://github.com/jgiannop/qnotes")
 
@@ -19,6 +19,11 @@ qt_add_executable(qnotes
     systemauth.h systemauth.cpp
     singleinstance.h singleinstance.cpp
     secretstore.h secretstore.cpp
+    theme.h theme.cpp
+    autostart.h autostart.cpp
+    preferencesdialog.h preferencesdialog.cpp
+    backup.h backup.cpp
+    third_party/tweetnacl/tweetnacl.h third_party/tweetnacl/tweetnacl.c
 )
 
 qt_add_resources(qnotes "icons"

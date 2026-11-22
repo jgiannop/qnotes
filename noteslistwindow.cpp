@@ -2,6 +2,7 @@
 #include "notecolors.h"
 #include "notemanager.h"
 #include "notewindow.h"
+#include "theme.h"
 
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -13,6 +14,8 @@
 #include <QPainterPath>
 #include <QScreen>
 #include <QSettings>
+#include <QStyleHints>
+#include <QAction>
 #include <QScrollBar>
 #include <QStyledItemDelegate>
 #include <QToolButton>
@@ -38,11 +41,11 @@ QString friendlyDate(const QDateTime &dt)
 }
 
 // Soft drop shadow: stacked rounded rects with fading alpha (cheap stand-in for a blur).
-void paintShadow(QPainter *p, const QRectF &r, qreal radius, int spread, int alpha, qreal dy)
+void paintShadow(QPainter *p, const QRectF &r, qreal radius, int spread, int alpha, qreal dy, QColor c)
 {
     p->setPen(Qt::NoPen);
     for (int i = spread; i >= 1; --i) {
-        QColor c(60, 40, 20, alpha * (spread - i + 1) / (spread * spread / 2 + 1));
+        c.setAlpha(qMin(255, alpha * (spread - i + 1) / (spread * spread / 2 + 1)));
         p->setBrush(c);
         p->drawRoundedRect(r.translated(0, dy).adjusted(-i, -i, i, i), radius + i, radius + i);
     }
@@ -55,6 +58,7 @@ public:
     using QStyledItemDelegate::QStyledItemDelegate;
 
     QSize cardSize; // set by the window from the viewport width (list: one column, grid: several)
+    bool dark = false; // window background is dark: deeper shadows, light hairline around cards
 
     QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override
     {
@@ -71,7 +75,10 @@ public:
         p->save();
         p->setRenderHint(QPainter::Antialiasing);
 
-        paintShadow(p, r, radius, hot ? 8 : 5, hot ? 34 : 22, hot ? 3 : 2);
+        if (dark)
+            paintShadow(p, r, radius, hot ? 8 : 5, hot ? 90 : 70, hot ? 3 : 2, Qt::black);
+        else
+            paintShadow(p, r, radius, hot ? 8 : 5, hot ? 34 : 22, hot ? 3 : 2, QColor(60, 40, 20));
 
         QPainterPath card;
         card.addRoundedRect(r, radius, radius);
@@ -89,7 +96,8 @@ public:
         p->fillRect(QRectF(r.left(), r.top(), 6, r.height()), accent);
         p->restore();
 
-        p->setPen(hot ? QPen(c.title.darker(135), 1.6) : QPen(QColor(0, 0, 0, 16), 1));
+        const QColor hairline = dark ? QColor(255, 255, 255, 28) : QColor(0, 0, 0, 16);
+        p->setPen(hot ? QPen(dark ? c.title : c.title.darker(135), 1.6) : QPen(hairline, 1));
         p->setBrush(Qt::NoBrush);
         p->drawPath(card);
 
@@ -163,14 +171,14 @@ public:
 };
 
 // List / grid symbols for the view toggle button.
-QIcon viewIcon(bool grid)
+QIcon viewIcon(bool grid, const QColor &color)
 {
     QPixmap pm(40, 40);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor("#8A7A64"));
+    p.setBrush(color);
     if (grid) {
         for (int x : {8, 22})
             for (int y : {8, 22})
@@ -183,13 +191,13 @@ QIcon viewIcon(bool grid)
 }
 
 // Magnifying glass for the search field, drawn so it looks the same on every platform.
-QIcon searchIcon()
+QIcon searchIcon(const QColor &color)
 {
     QPixmap pm(32, 32);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(QColor("#9C8F80"), 3, Qt::SolidLine, Qt::RoundCap));
+    p.setPen(QPen(color, 3, Qt::SolidLine, Qt::RoundCap));
     p.drawEllipse(QRectF(6, 6, 15, 15));
     p.drawLine(QPointF(19, 19), QPointF(26, 26));
     return QIcon(pm);
@@ -211,7 +219,7 @@ NotesListWindow::NotesListWindow(NoteManager *manager, QWidget *parent)
     m_search->setPlaceholderText(tr("Search notes"));
     m_search->setClearButtonEnabled(true);
     m_search->setMinimumHeight(40);
-    m_search->addAction(searchIcon(), QLineEdit::LeadingPosition);
+    m_searchIcon = m_search->addAction(QIcon(), QLineEdit::LeadingPosition);
     connect(m_search, &QLineEdit::textChanged, this, &NotesListWindow::refresh);
 
     m_viewBtn = new QToolButton(this);
@@ -222,9 +230,17 @@ NotesListWindow::NotesListWindow(NoteManager *manager, QWidget *parent)
     connect(m_viewBtn, &QToolButton::clicked, this, [this] {
         setGridMode(!m_grid);
         QSettings("qnotes", "qnotes").setValue("list/grid", m_grid);
-        if (m_grid && width() < 600) // room for at least 3 columns
-            resize(620, height());
+        if (m_grid && width() < 720) // room for at least 3 columns
+            resize(740, height());
     });
+
+    auto *prefsBtn = new QToolButton(this);
+    prefsBtn->setObjectName("prefsButton");
+    prefsBtn->setText(QStringLiteral("⚙"));
+    prefsBtn->setToolTip(tr("Preferences"));
+    prefsBtn->setFixedSize(40, 40);
+    prefsBtn->setCursor(Qt::PointingHandCursor);
+    connect(prefsBtn, &QToolButton::clicked, m_manager, &NoteManager::showPreferences);
 
     auto *kvBtn = new QToolButton(this);
     kvBtn->setObjectName("kvButton");
@@ -250,47 +266,9 @@ NotesListWindow::NotesListWindow(NoteManager *manager, QWidget *parent)
     header->setSpacing(8);
     header->addWidget(m_search, 1);
     header->addWidget(m_viewBtn);
+    header->addWidget(prefsBtn);
     header->addWidget(kvBtn);
     header->addWidget(addBtn);
-
-    // Fixed light palette, independent of the desktop theme (the note cards have their own colours anyway).
-    setStyleSheet(R"(
-        #notesList {
-            background: qlineargradient(x1:0, y1:0, x2:0.4, y2:1, stop:0 #FDFBF8, stop:1 #F1EBE3);
-        }
-        #search {
-            background: #FFFFFF;
-            border: 1px solid #E6DED3;
-            border-radius: 20px;
-            padding: 0 12px 0 6px;
-            font-size: 11pt;
-            color: #2B2620;
-            selection-background-color: #F3D46B;
-            selection-color: #2B2620;
-        }
-        #search:focus { border: 2px solid #E8BE45; }
-        #kvButton, #addButton, #viewButton {
-            border-radius: 20px;
-            font-size: 15pt;
-        }
-        #kvButton, #viewButton {
-            background: #FFFFFF;
-            border: 1px solid #E6DED3;
-            font-size: 13pt;
-        }
-        #kvButton:hover, #viewButton:hover { background: #FFF8E4; border-color: #E2B93B; }
-        #addButton {
-            color: #FFFFFF;
-            font-weight: 600;
-            border: none;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #F8D35E, stop:1 #E8A82A);
-        }
-        #addButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FADD7A, stop:1 #EDB33C);
-        }
-        #addButton:pressed, #kvButton:pressed, #viewButton:pressed { padding-top: 2px; }
-        #cards { background: transparent; }
-    )");
 
     m_list = new QListWidget(this);
     m_list->setItemDelegate(new NoteCardDelegate(m_list));
@@ -303,13 +281,6 @@ NotesListWindow::NotesListWindow(NoteManager *manager, QWidget *parent)
     m_list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_list->setObjectName("cards");
-    m_list->verticalScrollBar()->setStyleSheet(R"(
-        QScrollBar:vertical { background: transparent; width: 8px; margin: 4px 2px 4px 0; }
-        QScrollBar::handle:vertical { background: rgba(80, 60, 30, 60); border-radius: 3px; min-height: 30px; }
-        QScrollBar::handle:vertical:hover { background: rgba(80, 60, 30, 110); }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; border: none; background: none; }
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-    )");
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_list, &QListWidget::itemActivated, this, &NotesListWindow::openItem);
     connect(m_list, &QListWidget::customContextMenuRequested, this, &NotesListWindow::showContextMenu);
@@ -321,6 +292,108 @@ NotesListWindow::NotesListWindow(NoteManager *manager, QWidget *parent)
     layout->addWidget(m_list, 1);
 
     setGridMode(QSettings("qnotes", "qnotes").value("list/grid", false).toBool());
+    applyTheme();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // Live switch when the system goes light <-> dark (Qt 6.4 on Linux: re-checked in showNear()).
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, &NotesListWindow::applyTheme);
+#endif
+}
+
+NotesListWindow::~NotesListWindow()
+{
+    if (isVisible())
+        saveWindowGeometry(); // app quitting with the window open
+}
+
+void NotesListWindow::saveWindowGeometry()
+{
+    QSettings("qnotes", "qnotes").setValue("list/geometry", saveGeometry());
+}
+
+void NotesListWindow::hideEvent(QHideEvent *event)
+{
+    saveWindowGeometry();
+    QWidget::hideEvent(event);
+}
+
+// Colours of the window chrome. The note cards keep their own note colours in both themes.
+void NotesListWindow::applyTheme()
+{
+    const bool dark = Theme::isDark();
+    if (m_themeApplied && dark == m_dark)
+        return;
+    m_themeApplied = true;
+    m_dark = dark;
+
+    struct Colors {
+        const char *bgTop, *bgBottom, *field, *border, *text, *hoverBg, *scroll, *scrollHover;
+        QColor icon;
+    };
+    const Colors c = dark ? Colors{"#2B2825", "#1D1B19", "#36322E", "#4A443D", "#EDE6DC", "#3E3832",
+                                   "rgba(255, 240, 220, 50)", "rgba(255, 240, 220, 100)", QColor("#C9BCAB")}
+                          : Colors{"#FDFBF8", "#F1EBE3", "#FFFFFF", "#E6DED3", "#2B2620", "#FFF8E4",
+                                   "rgba(80, 60, 30, 60)", "rgba(80, 60, 30, 110)", QColor("#8A7A64")};
+
+    setStyleSheet(QStringLiteral(R"(
+        #notesList {
+            background: qlineargradient(x1:0, y1:0, x2:0.4, y2:1, stop:0 %1, stop:1 %2);
+        }
+        #search {
+            background: %3;
+            border: 1px solid %4;
+            border-radius: 20px;
+            padding: 0 12px 0 6px;
+            font-size: 11pt;
+            color: %5;
+            selection-background-color: #F3D46B;
+            selection-color: #2B2620;
+        }
+        #search:focus { border: 2px solid #E8BE45; }
+        #kvButton, #addButton, #viewButton, #prefsButton {
+            border-radius: 20px;
+            font-size: 15pt;
+        }
+        #kvButton, #viewButton, #prefsButton {
+            background: %3;
+            border: 1px solid %4;
+            font-size: 13pt;
+            color: %5;
+        }
+        #prefsButton { font-size: 16pt; padding-bottom: 2px; }
+        #kvButton:hover, #viewButton:hover, #prefsButton:hover { background: %6; border-color: #E2B93B; }
+        #addButton {
+            color: #FFFFFF;
+            font-weight: 600;
+            border: none;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #F8D35E, stop:1 #E8A82A);
+        }
+        #addButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FADD7A, stop:1 #EDB33C);
+        }
+        #addButton:pressed, #kvButton:pressed, #viewButton:pressed, #prefsButton:pressed { padding-top: 2px; }
+        #cards { background: transparent; }
+    )")
+                      .arg(c.bgTop, c.bgBottom, c.field, c.border, c.text, c.hoverBg));
+
+    m_list->verticalScrollBar()->setStyleSheet(QStringLiteral(R"(
+        QScrollBar:vertical { background: transparent; width: 8px; margin: 4px 2px 4px 0; }
+        QScrollBar::handle:vertical { background: %1; border-radius: 3px; min-height: 30px; }
+        QScrollBar::handle:vertical:hover { background: %2; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; border: none; background: none; }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+    )").arg(c.scroll, c.scrollHover));
+
+    QPalette pal = m_search->palette();
+    QColor placeholder(c.text);
+    placeholder.setAlpha(130);
+    pal.setColor(QPalette::PlaceholderText, placeholder);
+    m_search->setPalette(pal);
+
+    m_iconColor = c.icon;
+    m_searchIcon->setIcon(searchIcon(c.icon));
+    m_viewBtn->setIcon(viewIcon(!m_grid, c.icon));
+    static_cast<NoteCardDelegate *>(m_list->itemDelegate())->dark = dark;
+    m_list->viewport()->update();
 }
 
 void NotesListWindow::setGridMode(bool grid)
@@ -328,7 +401,7 @@ void NotesListWindow::setGridMode(bool grid)
     m_grid = grid;
     m_list->setFlow(grid ? QListView::LeftToRight : QListView::TopToBottom);
     m_list->setWrapping(grid);
-    m_viewBtn->setIcon(viewIcon(!grid)); // shows what a click switches to
+    m_viewBtn->setIcon(viewIcon(!grid, m_iconColor)); // shows what a click switches to
     m_viewBtn->setToolTip(grid ? tr("Show as list") : tr("Show as grid"));
     updateCardSize();
 }
@@ -339,8 +412,10 @@ void NotesListWindow::updateCardSize()
     const int width = m_list->viewport()->width();
     QSize size(width, 116);
     if (m_grid) {
-        const int columns = qMax(1, width / 190); // cards at least ~190 px wide
-        size = QSize((width - 4) / columns, 180); // QListView wraps a few px before the full width
+        // Cards at least 228 x 198; wider windows stretch them, keeping that shape (height follows width).
+        const int columns = qMax(1, width / 228);
+        const int cardWidth = (width - 4) / columns; // QListView wraps a few px before the full width
+        size = QSize(cardWidth, cardWidth * 198 / 228);
     }
     if (size == delegate->cardSize)
         return;
@@ -410,6 +485,12 @@ void NotesListWindow::showContextMenu(const QPoint &pos)
 
 void NotesListWindow::showNear(const QPoint &anchor)
 {
+    applyTheme(); // the system may have switched between light and dark since last time
+    if (!m_placed) {
+        const QByteArray geometry = QSettings("qnotes", "qnotes").value("list/geometry").toByteArray();
+        if (!geometry.isEmpty() && restoreGeometry(geometry))
+            m_placed = true; // where the user left it last time
+    }
     if (!m_placed && !anchor.isNull()) {
         m_placed = true;
         QScreen *screen = QGuiApplication::screenAt(anchor);

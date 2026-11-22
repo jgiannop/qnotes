@@ -75,10 +75,14 @@ int main(int argc, char *argv[])
 
     NoteManager manager;
     QObject::connect(&instance, &SingleInstance::showRequested, &manager, &NoteManager::showList);
-    manager.start(); // creates the tray icon
 
+    // Tray first: it must be created while the session bus is still hidden. Restore the bus before
+    // anything touches the keychain (loading notes reads secrets, migration writes them).
+    manager.setupTray();
     if (forceXEmbedTray)
-        qputenv("DBUS_SESSION_BUS_ADDRESS", sessionBus); // for any child processes
+        qputenv("DBUS_SESSION_BUS_ADDRESS", sessionBus);
+
+    manager.start();
 
     return app.exec();
 }

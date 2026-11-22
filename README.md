@@ -12,10 +12,18 @@ A sticky-notes desktop app for Linux, modelled on Windows Sticky Notes. Built wi
   - Revealed values hide again after 30 seconds.
   - Copied secrets are cleared from the clipboard after 30 seconds.
 - **Notes list** with search, as a list or a grid. Secret values are masked in the list and in search results.
-- **Tray icon:** left-click shows or hides the notes list; right-click opens a menu with New note and Quit.
+- **Tray icon:** left-click shows or hides the notes list; right-click opens a menu with New note, Preferences
+  and Quit.
   QNotes keeps running in the tray when all windows are closed. Only one copy runs at a time: starting it again
   brings up the notes list.
 - 7 note colours, frameless windows you can move and resize, and autosave.
+- **Preferences** (⚙ in the notes list, or the tray menu):
+  - Start QNotes when you log in.
+  - Light or dark notes list, or the same as the system (default).
+  - **Backup:** export all notes, including secret values, to one `.qnotes` file encrypted with a password you
+    choose (XSalsa20-Poly1305, key derived with PBKDF2-HMAC-SHA256). Importing adds the notes that aren't there
+    yet; secrets go into the keychain. A wrong password or a modified file is detected.
+- The notes list remembers its size and position.
 
 - Secret values are stored in the **system keychain**: GNOME Keyring or KWallet on Linux, Credential Manager on
   Windows. `notes.json` only keeps a reference to them. Secrets from older versions are moved there automatically.

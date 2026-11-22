@@ -10,6 +10,7 @@
 #include "notewindow.h"
 
 class NotesListWindow;
+class PreferencesDialog;
 class QSystemTrayIcon;
 class QWidget;
 
@@ -21,7 +22,8 @@ public:
     explicit NoteManager(QObject *parent = nullptr);
     ~NoteManager() override;
 
-    void start(); // load notes and show windows
+    void setupTray(); // call before start(); on GNOME/X11 while DBus is still hidden (see main.cpp)
+    void start();     // load notes and show windows
 
     QList<NoteWindow *> notes() const { return m_notes; }
     NoteWindow *noteById(const QString &id) const;
@@ -31,6 +33,11 @@ public:
     void requestDelete(NoteWindow *note, QWidget *dialogParent);
     void showList();
     void toggleList(); // tray icon click
+    void showPreferences();
+    void applyTheme(); // light / dark preference or system setting changed
+
+    void exportBackup(QWidget *parent);
+    void importBackup(QWidget *parent);
 
 public slots:
     void scheduleSave();
@@ -41,19 +48,22 @@ signals:
 
 private:
     NoteWindow *addNote(const QString &id, NoteWindow::Kind kind);
+    NoteWindow *loadNote(const QJsonObject &o, bool *migrate);
+    QJsonObject noteToJson(NoteWindow *n) const; // secret values included
     QString filePath() const;
-    void setupTray();
     QJsonArray loadSecrets(QJsonArray fields, bool *migrate);
     QJsonArray storeSecrets(QJsonArray fields, QSet<QString> *seen);
-    void warnPlaintextSecrets();
+    void warnPlaintextSecrets(bool keychainMissing);
     NotesListWindow *listWindow();
 
     QList<NoteWindow *> m_notes;
     NotesListWindow *m_list = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
+    PreferencesDialog *m_preferences = nullptr;
     QHash<QString, QString> m_storedSecrets; // field id -> value currently in the keychain
     QSet<QString> m_unreadableSecrets;       // in the keychain but couldn't be read: never overwrite
     bool m_warnedPlaintext = false;
+    bool m_warnedWriteFailed = false;
     bool m_saving = false;
     QTimer m_saveTimer;
 };
