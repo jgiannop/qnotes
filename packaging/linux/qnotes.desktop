@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=QNotes
+GenericName=Sticky Notes
+Comment=Sticky notes with text and key-value notes
+Exec=qnotes
+Icon=qnotes
+Terminal=false
+Categories=Utility;Qt;
+Keywords=notes;sticky;memo;
+StartupWMClass=qnotes
+StartupNotify=true

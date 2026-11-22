@@ -17,7 +17,18 @@ A sticky-notes desktop app for Linux, modelled on Windows Sticky Notes. Built wi
 > **Note:** secrets are only hidden in the UI. They are stored **in plaintext** in `notes.json`. The plan is to move
 > them to the GNOME Keyring (libsecret).
 
-## Requirements
+## Install
+
+Download the latest package from the [Releases](https://github.com/jgiannop/qnotes/releases) page.
+
+- **Ubuntu / Debian** (Ubuntu 24.04+, Debian 13+): `sudo apt install ./qnotes_<version>_amd64.deb`
+- **Windows** (64-bit): run `qnotes-<version>-windows-x64.exe` (installer), or unzip the `.zip` and run `qnotes.exe`.
+  To reveal secrets, enter your Windows account password. For a Microsoft account, that's the online account
+  password, not your PIN.
+
+## Building from source
+
+### Requirements
 
 - Qt 6 (tested with 6.4)
 - CMake ≥ 3.16 and a C++17 compiler
@@ -29,12 +40,27 @@ On Ubuntu/Debian:
 sudo apt install build-essential cmake qt6-base-dev libpam0g-dev
 ```
 
-## Build & run
+### Build & run
 
 ```bash
 cmake -S . -B build && cmake --build build -j
 ./build/qnotes
 ```
+
+### Packaging
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+cd build && cpack        # Linux: qnotes_<version>_amd64.deb; Windows: .zip + NSIS installer
+```
+
+### Releasing
+
+1. Bump `VERSION` in the `project()` line of `CMakeLists.txt` and commit.
+2. Tag and push: `git tag v1.2.3 && git push origin main v1.2.3`.
+
+The [Release workflow](.github/workflows/release.yml) then builds the `.deb` and the Windows packages, and publishes
+them as a GitHub Release. It fails if the tag doesn't match the CMake version.
 
 ## Keyboard shortcuts
 

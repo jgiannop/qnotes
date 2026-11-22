@@ -3,7 +3,8 @@
 class QString;
 class QWidget;
 
-// Asks for the current user's system (login / sudo) password and verifies it with PAM.
+// Asks for the current user's system (login / sudo) password and verifies it with PAM (Linux)
+// or LogonUser (Windows).
 // After a successful authentication no prompt is shown again for a short grace period,
 // similar to sudo's timestamp.
 namespace SystemAuth {

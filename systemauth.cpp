@@ -25,6 +25,14 @@
 #include <unistd.h>
 #endif
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
+#if defined(HAVE_PAM) || defined(Q_OS_WIN)
+#define HAVE_SYSTEM_AUTH
+#endif
+
 namespace {
 
 constexpr qint64 kGracePeriodMs = 60 * 1000; // don't ask again for 1 minute
@@ -66,6 +74,20 @@ bool checkPassword(const QByteArray &user, const QByteArray &password)
     const int rc = pam_authenticate(handle, PAM_SILENT | PAM_DISALLOW_NULL_AUTHTOK);
     pam_end(handle, rc);
     return rc == PAM_SUCCESS;
+}
+#elif defined(Q_OS_WIN)
+// Verifies the Windows account password (for a Microsoft account: its online password, not the PIN).
+bool checkPassword(const QString &user, const QString &password)
+{
+    const QString domain = qEnvironmentVariable("USERDOMAIN", QStringLiteral("."));
+    HANDLE token = nullptr;
+    const BOOL ok = LogonUserW(reinterpret_cast<LPCWSTR>(user.utf16()),
+                               reinterpret_cast<LPCWSTR>(domain.utf16()),
+                               reinterpret_cast<LPCWSTR>(password.utf16()),
+                               LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, &token);
+    if (ok)
+        CloseHandle(token);
+    return ok;
 }
 #endif
 
@@ -130,17 +152,26 @@ private:
         setEnabled(false);
         setCursor(Qt::BusyCursor);
 
-        // Run PAM off the UI thread: a wrong password takes ~2 s (pam_faildelay).
+        // Check off the UI thread: a wrong password takes ~2 s (pam_faildelay / Windows logon delay).
         bool ok = false;
+#ifdef HAVE_SYSTEM_AUTH
 #ifdef HAVE_PAM
         const QByteArray user = m_user.toLocal8Bit();
         QThread *worker = QThread::create([&] { ok = checkPassword(user, password); });
+#else
+        const QString user = m_user;
+        QString widePassword = QString::fromUtf8(password);
+        QThread *worker = QThread::create([&] { ok = checkPassword(user, widePassword); });
+#endif
         QEventLoop loop;
         connect(worker, &QThread::finished, &loop, &QEventLoop::quit);
         worker->start();
         loop.exec();
         worker->wait();
         delete worker;
+#ifndef HAVE_PAM
+        widePassword.fill(QChar(0));
+#endif
 #endif
         password.fill('\0');
 
@@ -176,7 +207,7 @@ bool SystemAuth::authenticate(QWidget *parent, const QString &reason)
     if (g_lastSuccess.isValid() && g_lastSuccess.elapsed() < kGracePeriodMs)
         return true;
 
-#ifndef HAVE_PAM
+#ifndef HAVE_SYSTEM_AUTH
     QMessageBox::warning(parent, QObject::tr("Authentication"),
                          QObject::tr("System password verification is not supported on this platform."));
     return false;

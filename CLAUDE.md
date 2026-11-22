@@ -16,13 +16,24 @@ cmake -S . -B build && cmake --build build -j
 
 ## Files
 
-- `main.cpp` — app setup (name `qnotes`, display name `QNotes`), draws the app icon.
+- `main.cpp` — app setup (name `qnotes`, display name `QNotes`, desktop file name `qnotes`), loads the app icon from resources.
 - `notemanager.*` — owns all notes and the list window; JSON load/save; creating/deleting notes.
 - `notewindow.*` — one frameless note window: title bar (+ / ⋯ / ✕), colour menu, per-kind content + bottom toolbar.
 - `keyvalueeditor.*` — KeyValue note content: rows of key | value | 👁 ⧉ 🔒 ✕ (`KeyValueRow` is defined in the .cpp).
-- `systemauth.*` — password dialog; verifies the user's system password via PAM service `sudo`.
+- `systemauth.*` — password dialog; verifies the user's system password via PAM service `sudo` (Linux) or `LogonUserW` (Windows).
 - `noteslistwindow.*` — "QNotes" list window: search + painted note cards (`NoteCardDelegate`).
 - `notecolors.h` — the 7 Windows Sticky Notes colours (title/body/text).
+- `icons/` — `qnotes.svg` is the master icon; the PNGs (embedded via `qt_add_resources` and installed to hicolor) and
+  `qnotes.ico` (Windows exe) are rendered from it. ImageMagick renders this SVG wrongly; use Qt's `QSvgRenderer`.
+- `packaging/linux/qnotes.desktop`, `packaging/windows/qnotes.rc.in` (exe icon + version info, configured by CMake).
+- `.github/workflows/release.yml` — on a `v*` tag builds the .deb (ubuntu-24.04) and Windows zip + NSIS installer
+  (MSVC, Qt 6.8) and publishes a GitHub Release. Tag must equal the `project(... VERSION)`.
+
+## Packaging
+
+- `cd build && cpack` → `.deb` on Linux (deps via `dpkg-shlibdeps` + `qt6-qpa-plugins`, which isn't a library dep but
+  is needed to start). On Windows `install()` runs `qt_generate_deploy_app_script` (windeployqt), CPack makes ZIP + NSIS.
+- Windows builds can't be done on this machine; they only run in GitHub Actions.
 
 ## Data
 

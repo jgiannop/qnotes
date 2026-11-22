@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <clipPath id="note"><rect x="24" y="24" width="208" height="208" rx="22"/></clipPath>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF9DB"/>
+      <stop offset="1" stop-color="#FFF2B8"/>
+    </linearGradient>
+  </defs>
+  <!-- soft shadow -->
+  <rect x="26" y="30" width="208" height="208" rx="22" fill="#000" opacity="0.18"/>
+  <g clip-path="url(#note)">
+    <rect x="24" y="24" width="208" height="208" fill="url(#body)"/>
+    <rect x="24" y="24" width="208" height="48" fill="#F5D94E"/>
+    <!-- folded corner -->
+    <path d="M232 182 L182 232 L232 232 Z" fill="#E8D37A"/>
+    <path d="M232 182 L182 232 L182 196 Q182 182 196 182 Z" fill="#F7E79A"/>
+  </g>
+  <rect x="24" y="24" width="208" height="208" rx="22" fill="none" stroke="#000" stroke-opacity="0.22" stroke-width="3"/>
+  <g stroke="#9A8A3A" stroke-width="11" stroke-linecap="round">
+    <line x1="62" y1="110" x2="194" y2="110"/>
+    <line x1="62" y1="146" x2="194" y2="146"/>
+    <line x1="62" y1="182" x2="140" y2="182"/>
+  </g>
+</svg>
