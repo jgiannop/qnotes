@@ -9,10 +9,13 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QCursor>
+#include <QMenu>
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QScreen>
 #include <QStandardPaths>
+#include <QSystemTrayIcon>
 #include <QUuid>
 
 // Table notes were removed: convert their cells to text lines ("a | b | c") so nothing is lost.
@@ -46,6 +49,8 @@ NoteManager::~NoteManager()
         delete n;
     }
     delete m_list;
+    if (m_tray)
+        delete m_tray->contextMenu();
 }
 
 QString NoteManager::filePath() const
@@ -117,7 +122,56 @@ void NoteManager::start()
     if (m_notes.isEmpty())
         createNote();
 
-    showList();
+    setupTray();
+    if (!m_tray)
+        showList(); // no tray: the list window is the app's main window, as before
+}
+
+void NoteManager::setupTray()
+{
+    // On GNOME/X11, main() makes Qt pick an XEmbed tray icon here instead of a DBus one (see main.cpp).
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+
+    m_tray = new QSystemTrayIcon(QApplication::windowIcon(), this);
+    m_tray->setToolTip(QApplication::applicationDisplayName());
+
+    auto *menu = new QMenu; // no parent: popup menus must not inherit a note's style sheet
+    menu->addAction(tr("Show notes"), this, &NoteManager::showList);
+    menu->addAction(tr("New note"), this, [this] { createNote(); });
+    menu->addAction(tr("New key-value note"), this,
+                    [this] { createNote(nullptr, NoteWindow::Kind::KeyValue); });
+    menu->addSeparator();
+    menu->addAction(tr("Quit QNotes"), qApp, &QCoreApplication::quit);
+    m_tray->setContextMenu(menu);
+
+    connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+        // Trigger = left click (on GNOME's DBus tray: double-click). Right click shows the context menu.
+        if (reason == QSystemTrayIcon::Trigger)
+            toggleList();
+    });
+    m_tray->show();
+
+    // The app keeps running in the tray with every window closed.
+    QApplication::setQuitOnLastWindowClosed(false);
+}
+
+NotesListWindow *NoteManager::listWindow()
+{
+    if (!m_list) {
+        m_list = new NotesListWindow(this);
+        connect(this, &NoteManager::notesChanged, m_list, &NotesListWindow::refresh);
+    }
+    return m_list;
+}
+
+void NoteManager::toggleList()
+{
+    NotesListWindow *list = listWindow();
+    if (list->isVisible() && !list->isMinimized() && list->isActiveWindow())
+        list->hide();
+    else
+        showList(); // also raises it if it's behind other windows
 }
 
 NoteWindow *NoteManager::createNote(NoteWindow *near, NoteWindow::Kind kind)
@@ -159,14 +213,11 @@ void NoteManager::requestDelete(NoteWindow *note, QWidget *dialogParent)
 
 void NoteManager::showList()
 {
-    if (!m_list) {
-        m_list = new NotesListWindow(this);
-        connect(this, &NoteManager::notesChanged, m_list, &NotesListWindow::refresh);
-    }
-    m_list->refresh();
-    m_list->show();
-    m_list->raise();
-    m_list->activateWindow();
+    // First time: open next to the tray icon. Its position isn't known for DBus tray items: use the mouse.
+    QPoint anchor;
+    if (m_tray)
+        anchor = m_tray->geometry().isEmpty() ? QCursor::pos() : m_tray->geometry().center();
+    listWindow()->showNear(anchor);
 }
 
 void NoteManager::scheduleSave()

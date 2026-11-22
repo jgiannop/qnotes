@@ -11,7 +11,10 @@ A sticky-notes desktop app for Linux, modelled on Windows Sticky Notes. Built wi
   - After you authenticate, there's a 60-second grace period, like `sudo`.
   - Revealed values hide again after 30 seconds.
   - Copied secrets are cleared from the clipboard after 30 seconds.
-- **Notes list** with search. Secret values are masked in the list and in search results.
+- **Notes list** with search, as a list or a grid. Secret values are masked in the list and in search results.
+- **Tray icon:** left-click shows or hides the notes list; right-click opens a menu with New note and Quit.
+  QNotes keeps running in the tray when all windows are closed. Only one copy runs at a time: starting it again
+  brings up the notes list.
 - 7 note colours, frameless windows you can move and resize, and autosave.
 
 > **Note:** secrets are only hidden in the UI. They are stored **in plaintext** in `notes.json`. The plan is to move
@@ -22,7 +25,7 @@ A sticky-notes desktop app for Linux, modelled on Windows Sticky Notes. Built wi
 Download the latest package from the [Releases](https://github.com/jgiannop/qnotes/releases) page.
 
 - **Ubuntu / Debian** (Ubuntu 24.04+, Debian 13+): `sudo apt install ./qnotes_<version>_amd64.deb`
-- **Windows** (64-bit): run `qnotes-<version>-windows-x64.exe` (installer), or unzip the `.zip` and run `qnotes.exe`.
+- **Windows 10 / 11** (64-bit): run `qnotes-<version>-windows-x64.exe` (installer), or unzip the `.zip` and run `qnotes.exe`.
   To reveal secrets, enter your Windows account password. For a Microsoft account, that's the online account
   password, not your PIN.
 

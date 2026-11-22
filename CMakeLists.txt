@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
-project(QNotes VERSION 1.0.0 LANGUAGES CXX
+project(QNotes VERSION 1.1.0 LANGUAGES CXX
         DESCRIPTION "Sticky notes with text and key-value notes"
         HOMEPAGE_URL "https://github.com/jgiannop/qnotes")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 qt_add_executable(qnotes
@@ -17,6 +17,7 @@ qt_add_executable(qnotes
     noteslistwindow.h noteslistwindow.cpp
     keyvalueeditor.h keyvalueeditor.cpp
     systemauth.h systemauth.cpp
+    singleinstance.h singleinstance.cpp
 )
 
 qt_add_resources(qnotes "icons"
@@ -31,7 +32,7 @@ qt_add_resources(qnotes "icons"
 )
 
 target_compile_definitions(qnotes PRIVATE QNOTES_VERSION="${PROJECT_VERSION}")
-target_link_libraries(qnotes PRIVATE Qt6::Widgets)
+target_link_libraries(qnotes PRIVATE Qt6::Widgets Qt6::Network)
 
 # System password check for secret values (Linux: PAM, needs libpam0g-dev)
 if(UNIX AND NOT APPLE)
@@ -43,6 +44,15 @@ if(UNIX AND NOT APPLE)
         target_link_libraries(qnotes PRIVATE ${PAM_LIBRARY})
     else()
         message(WARNING "PAM not found: secret values cannot be revealed")
+    endif()
+
+    # X11 tray detection, so a left click on the tray icon works on GNOME (see NoteManager::setupTray)
+    find_library(XCB_LIBRARY xcb)
+    find_path(XCB_INCLUDE_DIR xcb/xcb.h)
+    if(XCB_LIBRARY AND XCB_INCLUDE_DIR)
+        target_compile_definitions(qnotes PRIVATE HAVE_XCB)
+        target_include_directories(qnotes PRIVATE ${XCB_INCLUDE_DIR})
+        target_link_libraries(qnotes PRIVATE ${XCB_LIBRARY})
     endif()
 endif()
 

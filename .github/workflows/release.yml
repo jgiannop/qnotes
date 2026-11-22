@@ -24,7 +24,7 @@ jobs:
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME != CMakeLists.txt version $version"; exit 1; }
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libpam0g-dev dpkg-dev
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libpam0g-dev libxcb1-dev dpkg-dev
 
       - name: Build
         run: |

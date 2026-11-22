@@ -7,6 +7,7 @@
 #include "notewindow.h"
 
 class NotesListWindow;
+class QSystemTrayIcon;
 class QWidget;
 
 // Owns all notes, the notes list, and saves/loads everything to JSON.
@@ -26,6 +27,7 @@ public:
                            NoteWindow::Kind kind = NoteWindow::Kind::Text);
     void requestDelete(NoteWindow *note, QWidget *dialogParent);
     void showList();
+    void toggleList(); // tray icon click
 
 public slots:
     void scheduleSave();
@@ -37,8 +39,11 @@ signals:
 private:
     NoteWindow *addNote(const QString &id, NoteWindow::Kind kind);
     QString filePath() const;
+    void setupTray();
+    NotesListWindow *listWindow();
 
     QList<NoteWindow *> m_notes;
     NotesListWindow *m_list = nullptr;
+    QSystemTrayIcon *m_tray = nullptr;
     QTimer m_saveTimer;
 };

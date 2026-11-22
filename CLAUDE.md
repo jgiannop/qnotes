@@ -17,11 +17,18 @@ cmake -S . -B build && cmake --build build -j
 ## Files
 
 - `main.cpp` — app setup (name `qnotes`, display name `QNotes`, desktop file name `qnotes`), loads the app icon from resources.
-- `notemanager.*` — owns all notes and the list window; JSON load/save; creating/deleting notes.
+- `notemanager.*` — owns all notes, the list window and the tray icon; JSON load/save; creating/deleting notes.
+- `singleinstance.*` — one QNotes per user via `QLocalServer` (`$XDG_RUNTIME_DIR/qnotes.sock`, Windows: pipe
+  `qnotes-<user>`). A second launch sends `show` to the running one and exits; a stale socket is removed.
 - `notewindow.*` — one frameless note window: title bar (+ / ⋯ / ✕), colour menu, per-kind content + bottom toolbar.
 - `keyvalueeditor.*` — KeyValue note content: rows of key | value | 👁 ⧉ 🔒 ✕ (`KeyValueRow` is defined in the .cpp).
 - `systemauth.*` — password dialog; verifies the user's system password via PAM service `sudo` (Linux) or `LogonUserW` (Windows).
-- `noteslistwindow.*` — "QNotes" list window: search + painted note cards (`NoteCardDelegate`).
+- `noteslistwindow.*` — "QNotes" list window: pill search + round ✚/🔑 buttons, painted note cards (`NoteCardDelegate`:
+  shadow, left colour accent, first line = bold title). Fixed light palette via one style sheet using `#objectName`
+  selectors (so the context menu / message boxes don't inherit it); the scrollbar has its own style sheet.
+  List or grid view (toggle button, saved in `QSettings("qnotes","qnotes")` key `list/grid`): same `QListWidget`,
+  grid = `LeftToRight` flow + wrapping; `updateCardSize()` sets the delegate's `cardSize` from the viewport width.
+  A normal window; `showNear()` places it next to the tray icon the first time only.
 - `notecolors.h` — the 7 Windows Sticky Notes colours (title/body/text).
 - `icons/` — `qnotes.svg` is the master icon; the PNGs (embedded via `qt_add_resources` and installed to hicolor) and
   `qnotes.ico` (Windows exe) are rendered from it. ImageMagick renders this SVG wrongly; use Qt's `QSvgRenderer`.
@@ -42,6 +49,17 @@ cmake -S . -B build && cmake --build build -j
 - Legacy `"type": "table"` notes (a removed spreadsheet feature) are converted to text notes on load (`legacyTableToHtml` in notemanager.cpp).
 
 ## Design decisions / gotchas
+
+- **Tray:** if `QSystemTrayIcon::isSystemTrayAvailable()`, the list isn't shown at start; left-click on the tray
+  shows the list window (first time next to the icon, or at the mouse if the icon position is unknown) or hides it
+  if it's the active window; right-click has a menu with Quit. `quitOnLastWindowClosed` is off then, so closing the
+  list just hides it. Without a tray the list is shown at start as before.
+- **XEmbed tray hack (main.cpp):** Ubuntu's AppIndicator extension opens a DBus/SNI tray item's menu on left click
+  and only sends double-clicks to the app. So on X11 with an XEmbed tray (`_NET_SYSTEM_TRAY_S<n>` owned, i.e. the
+  extension's legacy tray), `main()` sets `DBUS_SESSION_BUS_ADDRESS=disabled:` *before* `QApplication` (something
+  touches the bus during startup, so later is too late) and restores it after the tray exists. Qt then uses XEmbed,
+  which gets real clicks. Cost: no session bus in-process (no AT-SPI accessibility). Check with
+  `gdbus ... StatusNotifierWatcher RegisteredStatusNotifierItems`: qnotes must not be listed. Needs `libxcb1-dev`.
 
 - **Secrets are only hidden in the UI.** Values are stored in plaintext in notes.json. Moving secrets to the GNOME Keyring
   (libsecret, needs `libsecret-1-dev`) is the planned fix. Don't claim secrets are encrypted.
