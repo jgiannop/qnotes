@@ -10,7 +10,8 @@
 
 namespace {
 
-const QString kService = QStringLiteral("QNotes");
+// Test harnesses set QNOTES_KEYCHAIN_SERVICE so their entries never mix with the user's real ones.
+const QString kService = qEnvironmentVariable("QNOTES_KEYCHAIN_SERVICE", QStringLiteral("QNotes"));
 
 // Runs a keychain job to completion.
 bool runJob(QKeychain::Job *job, QString *error)

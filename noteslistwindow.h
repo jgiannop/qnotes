@@ -38,6 +38,7 @@ private:
 
     void openItem(QListWidgetItem *item);
     void showContextMenu(const QPoint &pos);
+    void copyField(const QString &noteId, const QString &fieldId);
 
     NoteManager *m_manager;
     QLineEdit *m_search;

@@ -201,8 +201,10 @@ NoteWindow *NoteManager::loadNote(const QJsonObject &o, bool *migrate)
     n->setColorIndex(o.value("color").toInt());
     if (type == "table")
         n->setHtml(legacyTableToHtml(o.value("table").toObject()));
-    else if (kind == NoteWindow::Kind::KeyValue)
+    else if (kind == NoteWindow::Kind::KeyValue) {
+        n->setKeyValueTitle(o.value("title").toString());
         n->setKeyValueData(loadSecrets(o.value("fields").toArray(), migrate));
+    }
     else
         n->setHtml(o.value("html").toString());
 
@@ -225,6 +227,8 @@ QJsonObject NoteManager::noteToJson(NoteWindow *n) const
     o["id"] = n->id();
     if (n->kind() == NoteWindow::Kind::KeyValue) {
         o["type"] = "keyvalue";
+        if (!n->keyValueTitle().isEmpty())
+            o["title"] = n->keyValueTitle();
         o["fields"] = n->keyValueData();
     } else {
         o["type"] = "text";

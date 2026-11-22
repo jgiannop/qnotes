@@ -291,7 +291,10 @@ void NoteWindow::applyColor()
         "#kvArea QToolButton { padding: 0; }"
         "#kvArea QLineEdit { background: %10; color: %3; border: 1px solid %8; border-radius: 3px;"
         "                    padding: 3px 5px; selection-background-color: %6; selection-color: %3; }"
-        "#kvArea QLineEdit:focus { border: 1px solid %9; }")
+        "#kvArea QLineEdit:focus { border: 1px solid %9; }"
+        "#kvArea QLineEdit#kvTitle { background: transparent; border: none; border-bottom: 1px solid %8;"
+        "                            border-radius: 0; padding: 3px 2px; }"
+        "#kvArea QLineEdit#kvTitle:focus { border-bottom: 1px solid %9; }")
         .arg(c.body.name(), c.title.name(), c.text.name(), hover, pressed, selection, handle, grid,
              c.title.darker(dark ? 50 : 160).name())
         .arg(dark ? "rgba(0,0,0,60)" : "rgba(255,255,255,140)"));
@@ -322,7 +325,27 @@ QString NoteWindow::plainText() const
 {
     if (m_edit)
         return m_edit->toPlainText();
-    return m_kv->toPlainText();
+    const QString title = m_kv->title().trimmed();
+    return title.isEmpty() ? m_kv->toPlainText() : title + '\n' + m_kv->toPlainText();
+}
+
+QString NoteWindow::keyValueTitle() const
+{
+    return m_kv ? m_kv->title() : QString();
+}
+
+void NoteWindow::setKeyValueTitle(const QString &title)
+{
+    if (!m_kv)
+        return;
+    m_loading = true;
+    m_kv->setTitle(title);
+    m_loading = false;
+}
+
+QString NoteWindow::keyValueFieldsText() const
+{
+    return m_kv ? m_kv->toPlainText() : QString();
 }
 
 QJsonArray NoteWindow::keyValueData() const

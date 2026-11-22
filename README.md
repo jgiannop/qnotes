@@ -12,6 +12,9 @@ A sticky-notes desktop app for Linux, modelled on Windows Sticky Notes. Built wi
   - Revealed values hide again after 30 seconds.
   - Copied secrets are cleared from the clipboard after 30 seconds.
 - **Notes list** with search, as a list or a grid. Secret values are masked in the list and in search results.
+  Right-click a key-value note → **Copy value** to copy a field without opening the note (secrets ask for your
+  password first and are cleared from the clipboard after 30 s).
+- Key-value notes have an optional title, shown as the card title in the notes list.
 - **Tray icon:** left-click shows or hides the notes list; right-click opens a menu with New note, Preferences
   and Quit.
   QNotes keeps running in the tray when all windows are closed. Only one copy runs at a time: starting it again

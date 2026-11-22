@@ -2,6 +2,8 @@
 #include "notecolors.h"
 #include "notemanager.h"
 #include "notewindow.h"
+#include "keyvalueeditor.h"
+#include "systemauth.h"
 #include "theme.h"
 
 #include <QCoreApplication>
@@ -10,6 +12,11 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QCursor>
+#include <QToolTip>
+#include <QPointer>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScreen>
@@ -25,7 +32,7 @@
 
 namespace {
 
-enum Roles { IdRole = Qt::UserRole, ColorRole, TextRole, ModifiedRole, KindRole };
+enum Roles { IdRole = Qt::UserRole, ColorRole, TextRole, ModifiedRole, KindRole, TitleRole };
 
 // "12:15" today, "Yesterday", "22 Nov" this year, "22 Nov 2025" before.
 QString friendlyDate(const QDateTime &dt)
@@ -131,28 +138,41 @@ public:
             textTop = chipRect.bottom() + 6;
         }
 
-        // title = first non-empty line, preview = the rest
+        // Text notes: first non-empty line is the title, the rest the preview (one line, " · " separated).
+        // Key-value notes: only their optional title is a title; the fields are listed one per line.
         const QString text = index.data(TextRole).toString().left(600);
         QStringList lines;
         for (const QString &l : text.split('\n'))
             if (!l.trimmed().isEmpty())
                 lines << l.trimmed();
-        const QString title = lines.isEmpty() ? tr("Empty note") : lines.takeFirst();
-        const QString preview = lines.join(QStringLiteral(" · "));
+        QString title;
+        QString preview;
+        if (kind == NoteWindow::Kind::KeyValue) {
+            title = index.data(TitleRole).toString().trimmed();
+            preview = lines.join('\n');
+        } else {
+            if (!lines.isEmpty())
+                title = lines.takeFirst();
+            preview = lines.join(QStringLiteral(" · "));
+        }
+        const bool empty = title.isEmpty() && preview.isEmpty();
+        if (empty)
+            title = tr("Empty note");
 
         QFont titleFont = opt.font;
         titleFont.setPointSizeF(opt.font.pointSizeF() * 1.08);
         titleFont.setWeight(QFont::DemiBold);
         const QFontMetricsF tfm(titleFont);
         const qreal dateWidth = kind == NoteWindow::Kind::KeyValue ? 0 : sfm.horizontalAdvance(date) + 12;
-        p->setFont(titleFont);
-        QColor titleColor = c.text;
-        if (lines.isEmpty() && title == tr("Empty note"))
-            titleColor = dim;
-        p->setPen(titleColor);
-        p->drawText(QRectF(content.left(), textTop, content.width() - dateWidth, tfm.height()),
-                    Qt::AlignLeft | Qt::AlignVCenter,
-                    tfm.elidedText(title, Qt::ElideRight, content.width() - dateWidth));
+        qreal previewTop = textTop;
+        if (!title.isEmpty()) {
+            p->setFont(titleFont);
+            p->setPen(empty ? dim : c.text);
+            p->drawText(QRectF(content.left(), textTop, content.width() - dateWidth, tfm.height()),
+                        Qt::AlignLeft | Qt::AlignVCenter,
+                        tfm.elidedText(title, Qt::ElideRight, content.width() - dateWidth));
+            previewTop = textTop + tfm.height() + 4;
+        }
 
         if (!preview.isEmpty()) {
             QFont body = opt.font;
@@ -160,8 +180,7 @@ public:
             QColor pc = c.text;
             pc.setAlpha(175);
             p->setPen(pc);
-            const QRectF pr(content.left(), textTop + tfm.height() + 4, content.width(),
-                            content.bottom() - (textTop + tfm.height() + 4));
+            const QRectF pr(content.left(), previewTop, content.width(), content.bottom() - previewTop);
             p->setClipRect(pr);
             p->drawText(pr, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, preview);
         }
@@ -187,6 +206,19 @@ QIcon viewIcon(bool grid, const QColor &color)
         for (int y : {9, 18, 27})
             p.drawRoundedRect(QRectF(8, y, 24, 5), 2.5, 2.5);
     }
+    return QIcon(pm);
+}
+
+// Small rounded square in a note colour, for the colour menu.
+QIcon colorSwatch(const NoteColor &c)
+{
+    QPixmap pm(32, 32);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(c.title.darker(140), 1.5));
+    p.setBrush(c.title);
+    p.drawRoundedRect(QRectF(3, 3, 26, 26), 6, 6);
     return QIcon(pm);
 }
 
@@ -410,7 +442,7 @@ void NotesListWindow::updateCardSize()
 {
     auto *delegate = static_cast<NoteCardDelegate *>(m_list->itemDelegate());
     const int width = m_list->viewport()->width();
-    QSize size(width, 116);
+    QSize size(width, 140); // list view: one card per row
     if (m_grid) {
         // Cards at least 228 x 198; wider windows stretch them, keeping that shape (height follows width).
         const int columns = qMax(1, width / 228);
@@ -448,7 +480,9 @@ void NotesListWindow::refresh()
         auto *item = new QListWidgetItem(m_list);
         item->setData(IdRole, n->id());
         item->setData(ColorRole, n->colorIndex());
-        item->setData(TextRole, text);
+        const bool kv = n->kind() == NoteWindow::Kind::KeyValue;
+        item->setData(TextRole, kv ? n->keyValueFieldsText() : text); // text (incl. title) is for search
+        item->setData(TitleRole, kv ? n->keyValueTitle() : QString());
         item->setData(ModifiedRole, n->modified());
         item->setData(KindRole, int(n->kind()));
         if (n->id() == current)
@@ -477,6 +511,38 @@ void NotesListWindow::showContextMenu(const QPoint &pos)
         if (NoteWindow *n = m_manager->noteById(id))
             n->openNote();
     });
+
+    // Key-value notes: copy a value without opening the note. Secrets ask for the password first.
+    NoteWindow *note = m_manager->noteById(id);
+    if (note && note->kind() == NoteWindow::Kind::KeyValue) {
+        QMenu *copy = menu.addMenu(tr("Copy value"));
+        for (const QJsonValue &v : note->keyValueData()) {
+            const QJsonObject f = v.toObject();
+            const QString key = f.value("key").toString();
+            const bool secret = f.value("secret").toBool();
+            if (key.isEmpty() && f.value("value").toString().isEmpty())
+                continue;
+            const QString label = (secret ? QStringLiteral("\U0001F512 ") : QString())
+                                  + (key.isEmpty() ? tr("(no key)") : key);
+            copy->addAction(label, this, [this, id, fieldId = f.value("id").toString()] { copyField(id, fieldId); });
+        }
+        copy->setEnabled(!copy->isEmpty());
+    }
+
+    if (note) {
+        QMenu *colorMenu = menu.addMenu(tr("Colour"));
+        const auto &colors = noteColors();
+        for (int i = 0; i < colors.size(); ++i) {
+            QAction *a = colorMenu->addAction(colorSwatch(colors.at(i)), colors.at(i).name,
+                                              this, [this, id, i] {
+                                                  if (NoteWindow *n = m_manager->noteById(id))
+                                                      n->setColorIndex(i);
+                                              });
+            a->setCheckable(true);
+            a->setChecked(i == note->colorIndex());
+        }
+    }
+    menu.addSeparator();
     menu.addAction(tr("Delete note"), this, [this, id] {
         m_manager->requestDelete(m_manager->noteById(id), this);
     });
@@ -515,4 +581,31 @@ void NotesListWindow::showNear(const QPoint &anchor)
     raise();
     activateWindow();
     m_search->setFocus();
+}
+
+// Copies one field's current value (looked up again, the note may have changed while the menu was open).
+void NotesListWindow::copyField(const QString &noteId, const QString &fieldId)
+{
+    NoteWindow *note = m_manager->noteById(noteId);
+    if (!note)
+        return;
+    for (const QJsonValue &v : note->keyValueData()) {
+        const QJsonObject f = v.toObject();
+        if (f.value("id").toString() != fieldId)
+            continue;
+        const QString key = f.value("key").toString();
+        const bool secret = f.value("secret").toBool();
+        if (secret) {
+            QPointer<NotesListWindow> self(this);
+            const bool ok = SystemAuth::authenticate(this, tr("Copy the value of \"%1\"").arg(key));
+            if (!ok || !self || !m_manager->noteById(noteId))
+                return;
+        }
+        KeyValueEditor::copyToClipboard(f.value("value").toString(), secret);
+        QToolTip::showText(QCursor::pos(),
+                           secret ? tr("Copied \"%1\" (clipboard clears in 30 s)").arg(key)
+                                  : tr("Copied \"%1\"").arg(key),
+                           this);
+        return;
+    }
 }

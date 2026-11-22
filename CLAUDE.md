@@ -25,6 +25,7 @@ cmake -S . -B build && cmake --build build -j
 - `notewindow.*` — one frameless note window: title bar (+ / ⋯ / ✕), colour menu, per-kind content + bottom toolbar.
 - `keyvalueeditor.*` — KeyValue note content: rows of key | value | 👁 ⧉ 🔒 ✕ (`KeyValueRow` is defined in the .cpp).
   Every row has a stable `id` (UUID, saved in the JSON); a secret's keychain entry is stored under it.
+  Optional title line above the rows (`#kvTitle`, saved as the note's `"title"`).
 - `secretstore.*` — synchronous wrapper around QtKeychain (service `QNotes`, key = field id).
 - `preferencesdialog.*` — start on login, theme (System/Light/Dark), Export…/Import… (calls NoteManager).
 - `autostart.*` — `~/.config/autostart/qnotes.desktop` (Exec=`qnotes` if that's us on PATH, else the full path) /
@@ -43,6 +44,9 @@ cmake -S . -B build && cmake --build build -j
   selectors (so the context menu / message boxes don't inherit it); the scrollbar has its own style sheet.
   List or grid view (toggle button, saved in `QSettings("qnotes","qnotes")` key `list/grid`): same `QListWidget`,
   grid = `LeftToRight` flow + wrapping; `updateCardSize()` sets the delegate's `cardSize` from the viewport width.
+  Card context menu: Open / Copy value ▸ / Colour ▸ (swatches, `NoteWindow::setColorIndex`) / Delete. Copy value: (key-value fields; secrets via `SystemAuth`, clipboard wipe via
+  `KeyValueEditor::copyToClipboard`). Key-value cards use the optional note title (`TitleRole`), never the
+  first field, as the bold heading.
   A normal window; geometry saved in QSettings `list/geometry` on hide/destroy and restored in `showNear()`
   (first ever show: next to the tray icon).
 - `notecolors.h` — the 7 Windows Sticky Notes colours (title/body/text).
@@ -103,4 +107,8 @@ cmake -S . -B build && cmake --build build -j
 
 No test suite. To check UI changes without touching the user's real notes, build a small harness in the scratchpad
 that links the needed .cpp files, run it with `QT_QPA_PLATFORM=offscreen`, and save `widget->grab()` to PNG. When running
-the real app headless, set `XDG_DATA_HOME` to a scratch dir.
+the real app headless, set `XDG_DATA_HOME` and `XDG_CONFIG_HOME` to scratch dirs.
+**Always set `QNOTES_KEYCHAIN_SERVICE=QNotesTest`** when a harness or test run creates notes with secret fields:
+`XDG_DATA_HOME` doesn't isolate the keychain, and without it test secrets land in the user's real GNOME Keyring under
+service `QNotes`. Clean up test entries afterwards (keyring items with attribute `server` = `QNotesTest`).
+The GNOME/X11 tray DBus hack is only active on the real display (not with `offscreen`): test keychain + tray there.

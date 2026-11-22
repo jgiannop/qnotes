@@ -31,6 +31,9 @@ public:
 
     QJsonArray keyValueData() const;
     void setKeyValueData(const QJsonArray &data);
+    QString keyValueTitle() const;            // optional title of a key-value note
+    void setKeyValueTitle(const QString &title);
+    QString keyValueFieldsText() const;       // "key: value" lines, secrets masked
 
     QDateTime modified() const { return m_modified; }
     void setModified(const QDateTime &dt) { m_modified = dt; }

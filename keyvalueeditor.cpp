@@ -169,15 +169,7 @@ private:
     {
         if (isLocked() && !authenticate(QObject::tr("Copy the value of \"%1\"").arg(label())))
             return;
-        const QString text = m_value->text();
-        QApplication::clipboard()->setText(text);
-        if (m_secret) {
-            // Wipe the secret from the clipboard after a while, if it is still there.
-            QTimer::singleShot(kClipboardClearMs, qApp, [text] {
-                if (QApplication::clipboard()->text() == text)
-                    QApplication::clipboard()->clear();
-            });
-        }
+        KeyValueEditor::copyToClipboard(m_value->text(), m_secret);
         QToolTip::showText(m_copy->mapToGlobal(QPoint(0, m_copy->height())),
                            m_secret ? QObject::tr("Copied (clipboard clears in 30 s)") : QObject::tr("Copied"),
                            m_copy);
@@ -220,6 +212,22 @@ KeyValueEditor::KeyValueEditor(QWidget *parent) : QScrollArea(parent)
     m_layout = new QVBoxLayout(m_container);
     m_layout->setContentsMargins(8, 8, 8, 8);
     m_layout->setSpacing(6);
+
+    m_title = new QLineEdit(m_container);
+    m_title->setObjectName("kvTitle");
+    m_title->setPlaceholderText(tr("Title (optional)"));
+    QFont tf = m_title->font();
+    tf.setBold(true);
+    tf.setPointSizeF(tf.pointSizeF() * 1.15);
+    m_title->setFont(tf);
+    connect(m_title, &QLineEdit::textEdited, this, &KeyValueEditor::contentChanged);
+    connect(m_title, &QLineEdit::returnPressed, this, [this] {
+        if (!m_rows.isEmpty())
+            m_rows.first()->keyEdit()->setFocus();
+    });
+    m_layout->addWidget(m_title);
+    m_layout->addSpacing(2);
+
     m_layout->addStretch();
     setWidget(m_container);
 
@@ -266,8 +274,33 @@ void KeyValueEditor::lockAll()
 
 void KeyValueEditor::focusFirst()
 {
-    if (!m_rows.isEmpty())
+    // A new / untitled note starts at the title; otherwise at the first field.
+    if (m_title->text().isEmpty() || m_rows.isEmpty())
+        m_title->setFocus();
+    else
         m_rows.first()->keyEdit()->setFocus();
+}
+
+void KeyValueEditor::copyToClipboard(const QString &text, bool secret)
+{
+    QApplication::clipboard()->setText(text);
+    if (secret) {
+        // Wipe the secret from the clipboard after a while, if it is still there.
+        QTimer::singleShot(kClipboardClearMs, qApp, [text] {
+            if (QApplication::clipboard()->text() == text)
+                QApplication::clipboard()->clear();
+        });
+    }
+}
+
+QString KeyValueEditor::title() const
+{
+    return m_title->text();
+}
+
+void KeyValueEditor::setTitle(const QString &title)
+{
+    m_title->setText(title);
 }
 
 QJsonArray KeyValueEditor::toJson() const
