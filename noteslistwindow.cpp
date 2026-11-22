@@ -3,6 +3,7 @@
 #include "notemanager.h"
 #include "notewindow.h"
 
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -22,6 +23,19 @@
 namespace {
 
 enum Roles { IdRole = Qt::UserRole, ColorRole, TextRole, ModifiedRole, KindRole };
+
+// "12:15" today, "Yesterday", "22 Nov" this year, "22 Nov 2025" before.
+QString friendlyDate(const QDateTime &dt)
+{
+    const QDate today = QDate::currentDate();
+    if (dt.date() == today)
+        return dt.toString("HH:mm");
+    if (dt.date() == today.addDays(-1))
+        return QCoreApplication::translate("NotesListWindow", "Yesterday");
+    if (dt.date().year() == today.year())
+        return dt.toString("d MMM");
+    return dt.toString("d MMM yyyy");
+}
 
 // Soft drop shadow: stacked rounded rects with fading alpha (cheap stand-in for a blur).
 void paintShadow(QPainter *p, const QRectF &r, qreal radius, int spread, int alpha, qreal dy)
@@ -89,7 +103,7 @@ public:
         p->setFont(small);
         const QFontMetricsF sfm(small);
         const QDateTime dt = index.data(ModifiedRole).toDateTime();
-        const QString date = dt.date() == QDate::currentDate() ? dt.toString("HH:mm") : dt.toString("d MMM");
+        const QString date = friendlyDate(dt);
         p->setPen(dim);
         p->drawText(content, Qt::AlignRight | Qt::AlignTop, date);
 
