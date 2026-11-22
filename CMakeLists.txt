@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QNotes VERSION 1.1.0 LANGUAGES CXX
+project(QNotes VERSION 1.1.1 LANGUAGES CXX
         DESCRIPTION "Sticky notes with text and key-value notes"
         HOMEPAGE_URL "https://github.com/jgiannop/qnotes")
 
